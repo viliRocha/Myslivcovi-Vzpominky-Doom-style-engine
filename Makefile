@@ -1,10 +1,23 @@
 CC = g++
 CFLAGS = -Wall -std=c++14
-INCLUDE = -IC:/raylib/raylib/src
-LIBS = -L C:/raylib/raylib/src -lraylib -lopengl32 -lgdi32 -lwinmm   # Windows
 
 SRC = $(wildcard src/*.cpp)
-OUT = Myslivcovi-Vzpominky.exe
+OUT = Myslivcovi-Vzpominky
+
+ifeq ($(OS), Windows_NT) 
+	INCLUDE = -IC:/raylib/raylib/src 
+	LIBS = -L C:/raylib/raylib/src -lraylib -lopengl32 -lgdi32 -lwinmm 
+	OUT := $(OUT).exe
+	RM = del
+else ifeq ($(UNAME_S), Linux) 
+	INCLUDE = -I/usr/local/include 
+	LIBS = -L/usr/local/lib -lraylib -lGL -lm -lpthread -ldl -lrt -lX11 
+	RM = rm -f 
+else ifeq ($(UNAME_S), Darwin) #	Mac
+	INCLUDE = -I/usr/local/include 
+	LIBS = -L/usr/local/lib -lraylib -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo 
+	RM = rm -f 
+endif
 
 all: $(OUT)
 
@@ -14,5 +27,6 @@ $(OUT): $(SRC)
 run: $(OUT)
 	./$(OUT)
 
+#	Depending on the OS, the clean command changes
 clean:
-	del $(OUT)
+	$(RM) $(OUT)
