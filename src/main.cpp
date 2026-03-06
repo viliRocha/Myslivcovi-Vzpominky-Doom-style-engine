@@ -1,9 +1,11 @@
 #include <raylib.h>
 #include <math.h>
 
-constexpr int screenWidth = 160;
-constexpr int screenHeight = 120;
+constexpr int screenWidth = 240;
+constexpr int screenHeight = 180;
 constexpr int scale = 4;
+constexpr int numSect = 4;
+constexpr int numWalls = 16;
 
 typedef struct {
     float cos[360];
@@ -16,6 +18,21 @@ typedef struct {
     int l; //   Look up and down
 }player; player P;
 
+typedef struct {
+ int x1,y1; //bottom line point 1
+ int x2,y2; //bottom line point 2
+ Color c;     //wall color
+}walls; walls W[30];
+
+typedef struct {
+ int ws,we;     //wall number start and end
+ int z1,z2;     //height of bottom and top 
+ int d;         //add y distances to sort drawing order
+ Color c1,c2;     //bottom and top color
+ int surf[screenWidth];  //to hold points for surfaces
+ int surface;   //is there a surfaces to draw
+}sectors; sectors S[30];
+
 void rad_to_degrees() {
     for (int x=0; x<360; x++) {
         M.cos[x]=cos(x/180.0*PI);
@@ -23,42 +40,116 @@ void rad_to_degrees() {
     }
 }
 
+int loadSectors[]={
+    //wall start, wall end, z1 height, z2 height, bottom color, top color
+    0,  4, 0, 40, 2,3, //sector 1
+    4,  8, 0, 40, 4,5, //sector 2
+    8, 12, 0, 40, 6,7, //sector 3
+    12,16, 0, 40, 0,1, //sector 4
+};
+
+walls loadWalls[]={
+    //x1,y1, x2,y2, color
+    0, 0, 32, 0, YELLOW,
+    32, 0, 32,32, ORANGE,
+    32,32,  0,32, YELLOW,
+    0,32,  0, 0, ORANGE,
+
+    64, 0, 96, 0, GREEN,
+    96, 0, 96,32, DARKGREEN,
+    96,32, 64,32, GREEN,
+    64,32, 64, 0, DARKGREEN,
+
+    64, 64, 96, 64, (Color){230, 41, 55, 105},
+    96, 64, 96, 96, (Color){190, 33, 55, 105},
+    96, 96, 64, 96, (Color){230, 41, 55, 105}, // Transparent red
+    64, 96, 64, 64, (Color){190, 33, 55, 105}, // Transparent maroon
+   /*
+    64, 64, 96, 64, RED,
+    96, 64, 96, 96, MAROON,
+    96, 96, 64, 96, RED,
+    64, 96, 64, 64, MAROON,
+    */
+
+    0, 64, 32, 64, PURPLE,
+    32, 64, 32, 96, DARKPURPLE,
+    32, 96,  0, 96, PURPLE,
+    0, 96,  0, 64, DARKPURPLE,
+};
+
 void init() {
-    P.x=70;
-    P.y=110;
+    P.x=-32;
+    P.y=307;
     P.z=20;
-    P.a=0;
+    P.a=162;
     P.l=0;
 
     rad_to_degrees();
+
+    DisableCursor();
+
+    //load sectors
+    int s,w,v1=0,v2=0;
+    for(s=0;s<numSect;s++) {
+        S[s].ws=loadSectors[v1+0];                   //wall start number
+        S[s].we=loadSectors[v1+1];                   //wall end   number
+        S[s].z1=loadSectors[v1+2];                   //sector bottom height
+        S[s].z2=loadSectors[v1+3]-loadSectors[v1+2]; //sector top    height
+        //S[s].c1=loadSectors[v1+4];                   //sector top    color
+        //S[s].c2=loadSectors[v1+5];                   //sector bottom color
+        v1+=6;
+        for(w=S[s].ws;w<S[s].we;w++) {
+            W[w]=loadWalls[v2];
+            v2++;
+        }
+    }
 }
 
 void movePlayer() {
-    // Atualização de input 
-    if (IsKeyDown(KEY_W)) { 
-        P.a-=4; 
-        if (P.a < 0) {
-            P.a += 360;
-        }
-    } 
-    if (IsKeyDown(KEY_S)) { 
-        P.a+=4; 
-        if (P.a > 359) {
-            P.a -= 360;
-        } 
-    }
-
     int dx=M.sin[P.a]*10; //    Forward/back
     int dy=M.cos[P.a]*10;
 
-    if (IsKeyDown(KEY_A)) { 
+    // Input update
+    if (IsKeyDown(KEY_W)) {
         P.x += dx;
         P.y += dy;
     } 
-    if (IsKeyDown(KEY_D)) { 
+    if (IsKeyDown(KEY_S)) { 
         P.x -= dx;
         P.y -= dy;
     }
+
+    //  left
+    if (IsKeyDown(KEY_A)) { 
+        P.x -= dy;
+        P.y += dx;
+    }
+    //  right
+    if (IsKeyDown(KEY_D)) {
+        P.x += dy;
+        P.y -= dx;
+    }
+
+    //  Go up
+    if (IsKeyDown(KEY_SPACE)) {
+        P.z -= 1;
+    }
+    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) {
+        P.z += 1;
+    }
+
+    // Mouse rotation
+    Vector2 mouseDelta = GetMouseDelta(); // difference since the last frame
+    P.a += (int)(mouseDelta.x * 0.1f);    // adjusts sensitivity by multiplying
+    if (P.a < 0) {
+        P.a += 360;
+    }
+    if (P.a > 359) {
+        P.a -= 360;
+    }
+
+    // Look up/down with vertical mouse movement.
+    P.l += (int)(mouseDelta.y * -0.1f);
 }
 
 void clipBehindPlayer(int *x1,int *y1,int *z1, int x2,int y2,int z2) {
@@ -82,7 +173,7 @@ void clipBehindPlayer(int *x1,int *y1,int *z1, int x2,int y2,int z2) {
     *z1 = *z1 + s*(z2-(*z1));
 }
 
-void drawWall(int x1, int x2, int b1, int b2, int t1, int t2) {
+void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c) {
     int x;
     // Hold difference in distance
     int dyb = b2 - b1; // y distance of bottom line
@@ -127,12 +218,111 @@ void drawWall(int x1, int x2, int b1, int b2, int t1, int t2) {
         }
 
         for (int y = y1; y < y2; y++) {
-            DrawRectangle(x * scale, y * scale, scale, scale, RED);
+            DrawRectangle(x * scale, y * scale, scale, scale, c);
+        }
+    }
+}
+
+int dist(int x1,int y1, int x2,int y2) {
+    int distance = sqrt( (x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) );
+    return distance;
+}
+
+void draw3D() {
+    int s, w;
+    int wx[4], wy[4], wz[4];
+    float CS = M.cos[P.a], SN = M.sin[P.a];
+
+    //order sectors by distance
+    for(s=0;s<numSect-1;s++) {    
+        for(w=0;w<numSect-s-1;w++) {
+            if(S[w].d<S[w+1].d) { 
+                sectors st=S[w]; S[w]=S[w+1]; S[w+1]=st; 
+            }
+        }
+    }
+
+    //draw sectors
+    for(s=0;s<numSect;s++) { 
+        S[s].d=0; //clear distance
+
+        for(int loop=0; loop<2; loop++) {
+
+            //  cycle trough walls
+            for(w=S[s].ws;w<S[s].we;w++) {
+                //offset bottom 2 points by player
+                int x1=W[w].x1-P.x, y1=W[w].y1-P.y;
+                int x2=W[w].x2-P.x, y2=W[w].y2-P.y;
+
+                //  swap for surface (first draw flipped faces)
+                if(loop==0) { 
+                    int swp=x1; 
+                    x1=x2; 
+                    x2=swp; 
+                    swp=y1; 
+                    y1=y2; 
+                    y2=swp;
+                }
+
+                //  World x position
+                wx[0] = x1 * CS - y1 * SN;
+                wx[1] = x2 * CS - y2 * SN;
+                wx[2] = wx[0];
+                wx[3] = wx[1];
+
+                //  World y position
+                wy[0] = y1 * CS - x1 * SN;
+                wy[1] = y2 * CS - x2 * SN;
+                wy[2] = wy[0];
+                wy[3] = wy[1];
+
+                S[s].d+=dist(0,0, (wx[0]+wx[1])/2, (wy[0]+wy[1])/2 );  //store wall distance
+
+                //  World z height
+                wz[0] = S[s].z1 - P.z + ((P.l * wy[0]) / 32);
+                wz[1] = S[s].z1 - P.z + ((P.l * wy[1]) / 32);
+                wz[2]=wz[0]+S[s].z2; //top line has new z 
+                wz[3]=wz[1]+S[s].z2; 
+
+                //  Dont draw wall behind player
+                if (wy[0] < 1 && wy[1] < 1) {
+                    continue;
+                }
+
+                //  Still, PART of the wall could be behind the player:
+                // point 1 behind player, clip
+                if (wy[0] < 1) {
+                    clipBehindPlayer(&wx[0], &wy[0], &wz[0], wx[1], wy[1], wz[1]); // bottom line
+                    clipBehindPlayer(&wx[2], &wy[2], &wz[2], wx[3], wy[3], wz[3]); // top line
+                }
+                // point 2 behind player, clip
+                if (wy[1] < 1) {
+                    clipBehindPlayer(&wx[1], &wy[1], &wz[1], wx[0], wy[0], wz[0]); // bottom line
+                    clipBehindPlayer(&wx[3], &wy[3], &wz[3], wx[2], wy[2], wz[2]); // top line
+                }
+
+                //  Screen x and y position
+                wx[0] = wx[0] * 200 / wy[0] + screenWidth / 2;
+                wy[0] = wz[0] * 200 / wy[0] + screenHeight / 2;
+
+                wx[1] = wx[1] * 200 / wy[1] + screenWidth / 2;
+                wy[1] = wz[1] * 200 / wy[1] + screenHeight / 2;
+
+                wx[2] = wx[2] * 200 / wy[2] + screenWidth / 2;
+                wy[2] = wz[2] * 200 / wy[2] + screenHeight / 2;
+                wx[3] = wx[3] * 200 / wy[3] + screenWidth / 2;
+                wy[3] = wz[3] * 200 / wy[3] + screenHeight / 2;
+
+                drawWall(wx[0], wx[1], wy[0], wy[1], wy[2], wy[3], W[w].c);
+            }
+            S[s].d/=(S[s].we-S[s].ws); //find average sector distance
+            //S[s].surface*=-1;          //flip to negative to draw surface
         }
     }
 }
 
 int main() {
+    //SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(screenWidth * scale, screenHeight * scale, "Myslivcovi-Vzpominky");
 
     SetTargetFPS(24);
@@ -141,80 +331,13 @@ int main() {
     
     while (!WindowShouldClose()) {
         BeginDrawing();
-            ClearBackground(BLACK);
-
-            //BeginMode3D(camera);
-            //EndMode3D();
+            ClearBackground((Color){25, 25, 112, 255});
 
             movePlayer();
+            draw3D();
 
-            int wx[4], wy[4], wz[4];
-            float CS=M.cos[P.a], SN=M.sin[P.a];
-
-            int x1=40-P.x, y1=10-P.y;
-            int x2=40-P.x, y2=290-P.y;
-
-            //  World x position
-            wx[0]=x1*CS-y1*SN;
-            wx[1]=x2*CS-y2*SN;
-            wx[2]=wx[0];
-            wx[3]=wx[1];
-
-
-            //  World y position
-            wy[0]=y1*CS-x1*SN;
-            wy[1]=y2*CS-x2*SN;
-            wy[2]=wy[0];
-            wy[3]=wy[1];
-
-            //  World z height
-            wz[0]=0-P.z+((P.l*wy[0])/32);
-            wz[1]=0-P.z+((P.l*wy[1])/32);
-            wz[2]=wz[0]+40;
-            wz[3]=wz[1]+40;
-
-            //  Dont draw wall behind player
-            if(wy[0]<1 && wy[1]<1){
-                continue;
-            }
-
-            //  Still, PART of the wall could be behind the player:
-            //point 1 behind player, clip
-            if(wy[0]<1) { 
-                clipBehindPlayer(&wx[0],&wy[0],&wz[0], wx[1],wy[1],wz[1]); //bottom line
-                clipBehindPlayer(&wx[2],&wy[2],&wz[2], wx[3],wy[3],wz[3]); //top line
-            }
-            //point 2 behind player, clip
-            if(wy[1]<1) { 
-                clipBehindPlayer(&wx[1],&wy[1],&wz[1], wx[0],wy[0],wz[0]); //bottom line
-                clipBehindPlayer(&wx[3],&wy[3],&wz[3], wx[2],wy[2],wz[2]); //top line
-            }
-
-            //  Screen x and y position
-            wx[0]=wx[0]*200/wy[0]+screenWidth/2;
-            wy[0]=wz[0]*200/wy[0]+screenHeight/2;
-
-            wx[1]=wx[1]*200/wy[1]+screenWidth/2;
-            wy[1]=wz[1]*200/wy[1]+screenHeight/2;
-
-            wx[2]=wx[2]*200/wy[2]+screenWidth/2;
-            wy[2]=wz[2]*200/wy[2]+screenHeight/2;  
-            wx[3]=wx[3]*200/wy[3]+screenWidth/2; 
-            wy[3]=wz[3]*200/wy[3]+screenHeight/2;
-
-            //  Draw points
-            /*
-            if (wx[0] > 0 && wx[0] < screenWidth && wy[0] > 0 && wy[0] < screenHeight) {
-                DrawRectangle(wx[0] * scale, wy[0] * scale, scale, scale, RED);
-            }
-
-            if (wx[1] > 0 && wx[1] < screenWidth && wy[1] > 0 && wy[1] < screenHeight) {
-                DrawRectangle(wx[1] * scale, wy[1] * scale, scale, scale, RED);
-            }
-                */
-            drawWall(wx[0], wx[1], wy[0], wy[1], wy[2], wy[3]);
-
-            DrawText(TextFormat("FPS: %i", GetFPS()), 10, 10, 20, RED);
+            DrawText(TextFormat("Player Position: %i, %i, %i", P.x, P.y, P.z), 10, 10, 20, GREEN);
+            DrawText(TextFormat("FPS: %i", GetFPS()), 10, 30, 20, GREEN);
         EndDrawing();
     }
     

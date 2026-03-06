@@ -1,5 +1,5 @@
 # Myslivcovi-Vzpominky-Doom-style-engine
-### v0.0.2
+### v0.0.3
 
 A pseudo-3D engine made using Cpp and raylib.
 
@@ -9,6 +9,7 @@ A pseudo-3D engine made using Cpp and raylib.
 - **Web Build:** Compile the project to WASM.
 
 ## Screenshots
+<img src="./screenshots/image1.png" alt="screenshot" width="500px">
 
 ## Getting started 🚀
 Compile with the command `mingw32-make` and than run with `./Myslivcovi-Vzpominky.exe`.
