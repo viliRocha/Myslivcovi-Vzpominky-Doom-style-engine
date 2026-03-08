@@ -1,5 +1,5 @@
 # Myslivcovi-Vzpominky-Doom-style-engine
-### v0.0.3
+### v0.0.4
 
 A pseudo-3D engine made using Cpp and raylib.
 
@@ -7,6 +7,7 @@ A pseudo-3D engine made using Cpp and raylib.
 
 ## Upcoming Features
 - **Web Build:** Compile the project to WASM.
+- **Level Editor:** A visual way of creating levels.
 
 ## Screenshots
 <img src="./screenshots/image1.png" alt="screenshot" width="500px">

@@ -19,18 +19,19 @@ typedef struct {
 }player; player P;
 
 typedef struct {
- int x1,y1; //bottom line point 1
- int x2,y2; //bottom line point 2
- Color c;     //wall color
+    int x1,y1; //bottom line point 1
+    int x2,y2; //bottom line point 2
+    Color c;     //wall color
 }walls; walls W[30];
 
 typedef struct {
- int ws,we;     //wall number start and end
- int z1,z2;     //height of bottom and top 
- int d;         //add y distances to sort drawing order
- Color c1,c2;     //bottom and top color
- int surf[screenWidth];  //to hold points for surfaces
- int surface;   //is there a surfaces to draw
+    int ws,we;     //wall number start and end
+    int z1,z2;     //height of bottom and top 
+    int d;         //add y distances to sort drawing order
+    Color c1,c2;     //bottom and top color
+    int surfBottom[screenWidth]; // Bottom limits
+    int surfTop[screenWidth];    // Top limits
+    int surface;   //is there a surfaces to draw
 }sectors; sectors S[30];
 
 void rad_to_degrees() {
@@ -40,12 +41,12 @@ void rad_to_degrees() {
     }
 }
 
-int loadSectors[]={
-    //wall start, wall end, z1 height, z2 height, bottom color, top color
-    0,  4, 0, 40, 2,3, //sector 1
-    4,  8, 0, 40, 4,5, //sector 2
-    8, 12, 0, 40, 6,7, //sector 3
-    12,16, 0, 40, 0,1, //sector 4
+sectors loadSectors[]={
+    //wall start, wall end, z1 height, z2 height, y distances, bottom color, top color - surf and surface are not initialized
+    {0,  4, 0, 40, 0, ORANGE, YELLOW},//sector 1
+    {4,  8, 0, 40, 0, DARKGREEN, GREEN}, //sector 2
+    {8, 12, 0, 40, 0, Color{190, 33, 55, 105}, Color{230, 41, 55, 105}},  //sector 3
+    {12, 16, 0, 40, 0, DARKPURPLE, PURPLE}, //sector 4
 };
 
 walls loadWalls[]={
@@ -60,10 +61,10 @@ walls loadWalls[]={
     96,32, 64,32, GREEN,
     64,32, 64, 0, DARKGREEN,
 
-    64, 64, 96, 64, (Color){230, 41, 55, 105},
-    96, 64, 96, 96, (Color){190, 33, 55, 105},
-    96, 96, 64, 96, (Color){230, 41, 55, 105}, // Transparent red
-    64, 96, 64, 64, (Color){190, 33, 55, 105}, // Transparent maroon
+    64, 64, 96, 64, Color{230, 41, 55, 105},
+    96, 64, 96, 96, Color{190, 33, 55, 105},
+    96, 96, 64, 96, Color{230, 41, 55, 105}, // Transparent red
+    64, 96, 64, 64, Color{190, 33, 55, 105}, // Transparent maroon
    /*
     64, 64, 96, 64, RED,
     96, 64, 96, 96, MAROON,
@@ -89,17 +90,17 @@ void init() {
     DisableCursor();
 
     //load sectors
-    int s,w,v1=0,v2=0;
-    for(s=0;s<numSect;s++) {
-        S[s].ws=loadSectors[v1+0];                   //wall start number
-        S[s].we=loadSectors[v1+1];                   //wall end   number
-        S[s].z1=loadSectors[v1+2];                   //sector bottom height
-        S[s].z2=loadSectors[v1+3]-loadSectors[v1+2]; //sector top    height
-        //S[s].c1=loadSectors[v1+4];                   //sector top    color
-        //S[s].c2=loadSectors[v1+5];                   //sector bottom color
-        v1+=6;
-        for(w=S[s].ws;w<S[s].we;w++) {
-            W[w]=loadWalls[v2];
+    int s, w, v2=0;
+    for(s=0; s<numSect; s++) {
+        S[s].ws = loadSectors[s].ws;                   //wall start number
+        S[s].we = loadSectors[s].we;                   //wall end number
+        S[s].z1 = loadSectors[s].z1;                   //sector bottom height
+        S[s].z2 = loadSectors[s].z2 - loadSectors[s].z1; //sector top height
+        S[s].c1 = loadSectors[s].c1;                   //sector top color
+        S[s].c2 = loadSectors[s].c2;                   //sector bottom color
+
+        for(w=S[s].ws; w<S[s].we; w++) {
+            W[w] = loadWalls[v2];
             v2++;
         }
     }
@@ -140,7 +141,7 @@ void movePlayer() {
 
     // Mouse rotation
     Vector2 mouseDelta = GetMouseDelta(); // difference since the last frame
-    P.a += (int)(mouseDelta.x * 0.1f);    // adjusts sensitivity by multiplying
+    P.a += int(mouseDelta.x * 0.1f);    // adjusts sensitivity by multiplying
     if (P.a < 0) {
         P.a += 360;
     }
@@ -149,15 +150,15 @@ void movePlayer() {
     }
 
     // Look up/down with vertical mouse movement.
-    P.l += (int)(mouseDelta.y * -0.1f);
+    P.l += int(mouseDelta.y * -0.1f);
 }
 
 void clipBehindPlayer(int *x1,int *y1,int *z1, int x2,int y2,int z2) {
-    float da=*y1; //distance plane -> point a
-    float db= y2; //distance plane -> point b
-    float d=da-db; 
+    float da = *y1; //distance plane -> point a
+    float db = y2; //distance plane -> point b
+    float d = da-db; 
     
-    if(d==0){
+    if(d == 0){
         d=1;
     }
 
@@ -166,15 +167,15 @@ void clipBehindPlayer(int *x1,int *y1,int *z1, int x2,int y2,int z2) {
     *y1 = *y1 + s*(y2-(*y1)); 
     
     //prevent dividion by zero
-    if(*y1==0){ 
+    if(*y1 == 0){ 
         *y1=1;
     }
 
     *z1 = *z1 + s*(z2-(*z1));
 }
 
-void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c) {
-    int x;
+void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c, int s) {
+    int x, y;
     // Hold difference in distance
     int dyb = b2 - b1; // y distance of bottom line
     int dyt = t2 - t1; // y distance of top    line
@@ -217,8 +218,44 @@ void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c) {
             y2 = screenHeight - 1;
         }
 
+        //surface
+        if (S[s].surface == 1) { 
+            S[s].surfBottom[x] = y1; //save bottom points
+            continue;
+        }
+        if (S[s].surface == 2) { 
+            S[s].surfTop[x] = y2; //save top points
+            continue;
+        }
+        if (S[s].surface == 3) {
+            // save top and bottom points
+            S[s].surfBottom[x] = y1;
+            S[s].surfTop[x] = y2;
+            continue;
+        }
+
+        if (S[s].surface == -1) { 
+            for (y = S[s].surfBottom[x]; y < y1; y++){
+                //  This function draws a pixel: x posittion, y position, width, height, color
+                DrawRectangle(x * scale, y * scale, scale, scale, S[s].c1); //bottom
+            }
+        }
+        if (S[s].surface == -2) { 
+            for (y = y2; y < S[s].surfTop[x]; y++){ 
+                DrawRectangle(x * scale, y * scale, scale, scale, S[s].c2); //top
+            }
+        }
+        if (S[s].surface == -3) {
+            for (y = S[s].surfBottom[x]; y < y1; y++) {
+                DrawRectangle(x * scale, y * scale, scale, scale, S[s].c1); // bottom
+            }
+            for (y = y2; y < S[s].surfTop[x]; y++) {
+                DrawRectangle(x * scale, y * scale, scale, scale, S[s].c2); // top
+            }
+        }
+
         for (int y = y1; y < y2; y++) {
-            DrawRectangle(x * scale, y * scale, scale, scale, c);
+            DrawRectangle(x * scale, y * scale, scale, scale, c); // normal wall
         }
     }
 }
@@ -234,8 +271,8 @@ void draw3D() {
     float CS = M.cos[P.a], SN = M.sin[P.a];
 
     //order sectors by distance
-    for(s=0;s<numSect-1;s++) {    
-        for(w=0;w<numSect-s-1;w++) {
+    for(s=0; s < numSect-1; s++) {    
+        for(w = 0; w < numSect-s-1; w++) {
             if(S[w].d<S[w+1].d) { 
                 sectors st=S[w]; S[w]=S[w+1]; S[w+1]=st; 
             }
@@ -243,25 +280,32 @@ void draw3D() {
     }
 
     //draw sectors
-    for(s=0;s<numSect;s++) { 
+    for(s = 0; s < numSect; s++) { 
         S[s].d=0; //clear distance
 
-        for(int loop=0; loop<2; loop++) {
+        bool sectorTransparent = false;
+
+        //  First draw faces that are turned back and also save vertical limits (surfTop[x] and surfBottom[x])
+        for(int loop = 0; loop < 2; loop++) {
 
             //  cycle trough walls
-            for(w=S[s].ws;w<S[s].we;w++) {
+            for(w = S[s].ws; w < S[s].we; w++) {
+                if (W[w].c.a < 255) {
+                    sectorTransparent = true;
+                }
+
                 //offset bottom 2 points by player
-                int x1=W[w].x1-P.x, y1=W[w].y1-P.y;
-                int x2=W[w].x2-P.x, y2=W[w].y2-P.y;
+                int x1 = W[w].x1 - P.x, y1=W[w].y1 - P.y;
+                int x2 = W[w].x2 - P.x, y2=W[w].y2 - P.y;
 
                 //  swap for surface (first draw flipped faces)
-                if(loop==0) { 
-                    int swp=x1; 
-                    x1=x2; 
-                    x2=swp; 
-                    swp=y1; 
-                    y1=y2; 
-                    y2=swp;
+                if(loop == 0) { 
+                    int swp = x1; 
+                    x1 = x2; 
+                    x2 = swp; 
+                    swp  =y1; 
+                    y1 = y2; 
+                    y2 = swp;
                 }
 
                 //  World x position
@@ -271,18 +315,18 @@ void draw3D() {
                 wx[3] = wx[1];
 
                 //  World y position
-                wy[0] = y1 * CS - x1 * SN;
-                wy[1] = y2 * CS - x2 * SN;
+                wy[0] = y1 * CS + x1 * SN;
+                wy[1] = y2 * CS + x2 * SN;
                 wy[2] = wy[0];
                 wy[3] = wy[1];
 
-                S[s].d+=dist(0,0, (wx[0]+wx[1])/2, (wy[0]+wy[1])/2 );  //store wall distance
+                S[s].d += dist(0, 0, (wx[0] + wx[1]) / 2, (wy[0] + wy[1]) / 2);  //store wall distance
 
                 //  World z height
                 wz[0] = S[s].z1 - P.z + ((P.l * wy[0]) / 32);
                 wz[1] = S[s].z1 - P.z + ((P.l * wy[1]) / 32);
-                wz[2]=wz[0]+S[s].z2; //top line has new z 
-                wz[3]=wz[1]+S[s].z2; 
+                wz[2] = wz[0] + S[s].z2; //top line has new z 
+                wz[3] = wz[1] + S[s].z2; 
 
                 //  Dont draw wall behind player
                 if (wy[0] < 1 && wy[1] < 1) {
@@ -313,10 +357,23 @@ void draw3D() {
                 wx[3] = wx[3] * 200 / wy[3] + screenWidth / 2;
                 wy[3] = wz[3] * 200 / wy[3] + screenHeight / 2;
 
-                drawWall(wx[0], wx[1], wy[0], wy[1], wy[2], wy[3], W[w].c);
+                drawWall(wx[0], wx[1], wy[0], wy[1], wy[2], wy[3], W[w].c, s);
             }
-            S[s].d/=(S[s].we-S[s].ws); //find average sector distance
-            //S[s].surface*=-1;          //flip to negative to draw surface
+            S[s].d /= (S[s].we - S[s].ws); //find average sector distance
+            S[s].surface *= -1; //flip to negative to draw surface (first time the loop that draws x verstical lines runs, it saves the top and bottom values, the next time it uses them)
+        }
+
+        if (sectorTransparent) {
+            S[s].surface = 3; // draws top and bottom
+        }
+        else if (P.z < S[s].z1) {
+            S[s].surface = 1; // bottom
+        }
+        else if (P.z > S[s].z2) {
+            S[s].surface = 2; // top
+        }
+        else {
+            S[s].surface = 0; // none
         }
     }
 }
