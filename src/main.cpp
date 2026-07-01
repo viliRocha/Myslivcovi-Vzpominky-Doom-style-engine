@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "../textures/T_00.h"
+#include "../textures/T_VIEW2D.h"
 
 #include "game.h"
 #include "levelEditor.h"
@@ -31,7 +32,7 @@ void load() {
         printf("Error opening level.h"); 
         return;
     }
-    int s,w;
+    int s;
 
     fscanf(fp,"%i",&numSect);   //number of sectors
     //load all sectors
@@ -64,6 +65,24 @@ void load() {
     printf("Player: %d %d %d %d %d\n", P.x, P.y, P.z, P.a, P.l);
 }
 
+void loadImage(const unsigned char* tex, int texWidth, int texHeight, int slot) {
+    //define textures
+    Image img;
+    img.data = (void*)tex; // pointer to the raw bytes
+    img.width = texWidth;
+    img.height = texHeight;
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8;
+
+    Texture2D tex00 = LoadTextureFromImage(img);
+    texturesRaylib[slot] = tex00;
+
+    // auxiliary structure
+    Textures[slot].w = texWidth;
+    Textures[slot].h = texWidth;
+    Textures[slot].name = tex; // pointer for raw bytes
+}
+
 /*
 sectors loadSectors[]={
     //wall start, wall end, z1 height, z2 height, y distances, bottom color, top color - surf and surface are not initialized
@@ -76,14 +95,14 @@ sectors loadSectors[]={
 walls loadWalls[]={
     //x1,y1, x2,y2, color
     0, 0, 32, 0, YELLOW,
-    32, 0, 32,32, ORANGE,
-    32,32,  0,32, YELLOW,
-    0,32,  0, 0, ORANGE,
+    32, 0, 32, 32, ORANGE,
+    32, 32, 0, 32, YELLOW,
+    0, 32, 0, 0, ORANGE,
 
     64, 0, 96, 0, GREEN,
     96, 0, 96,32, DARKGREEN,
-    96,32, 64,32, GREEN,
-    64,32, 64, 0, DARKGREEN,
+    96, 32, 64,32, GREEN,
+    64, 32, 64, 0, DARKGREEN,
 
     64, 64, 96, 64, Color{230, 41, 55, 105},
     96, 64, 96, 96, Color{190, 33, 55, 105},
@@ -106,7 +125,6 @@ void init() {
     P.l=0;
     */
 
-
     rad_to_degrees();
 
     DisableCursor();
@@ -126,20 +144,12 @@ void init() {
             v2++;
         }
     }
-        */
+    */
 
     load(); // load level
 
-    //define textures
-    // converter array .h para Image e depois Texture2D
-    Image img = LoadImageFromMemory(".png", T_00, T_00_WIDTH * T_00_HEIGHT * 3);
-    Textures[0].w = T_00_WIDTH;
-    Textures[0].h = T_00_HEIGHT;
-    Texture2D tex00 = LoadTextureFromImage(img);
-    UnloadImage(img);
-
-    // guarde em uma variável global separada
-    texturesRaylib[0] = tex00;
+    loadImage(T_00, T_00_WIDTH, T_00_HEIGHT, 0);
+    loadImage(T_VIEW2D, T_VIEW2D_WIDTH, T_VIEW2D_HEIGHT, 1);
 }
 
 void movePlayer() {
@@ -189,7 +199,7 @@ void movePlayer() {
     P.l += int(mouseDelta.y * -0.1f);
 }
 
-void clipBehindPlayer(int *x1,int *y1,int *z1, int x2,int y2,int z2) {
+void clipBehindPlayer(int *x1,int *y1,int *z1, float *u1, float *v1, int x2, int y2, int z2, float u2, float v2) {
     float da = *y1; //distance plane -> point a
     float db = y2; //distance plane -> point b
     float d = da-db; 
@@ -208,18 +218,35 @@ void clipBehindPlayer(int *x1,int *y1,int *z1, int x2,int y2,int z2) {
     }
 
     *z1 = *z1 + s*(z2-(*z1));
+
+    // Interpolate texture coordinates (prevent them from being compressed instead of clipped when they are not entirely within the field of view)
+    *u1 = *u1 + s * (u2 - (*u1));
+    *v1 = *v1 + s * (v2 - (*v1));
 }
 
-void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c, int s) {
-    int x, y;
+Color GetTexturePixel(int texId, int u, int v) {
+    // ensures that u and v are within the limits.
+    u = u % Textures[texId].w;
+    v = v % Textures[texId].h;
+
+    // each pixel has 3 bytes (RGB)
+    int index = (v * Textures[texId].w + u) * 3;
+    unsigned char r = Textures[texId].name[index + 0];
+    unsigned char g = Textures[texId].name[index + 1];
+    unsigned char b = Textures[texId].name[index + 2];
+
+    return (Color){ r, g, b, 255 };
+}
+
+void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, float u0, float u1, int wallIdx) {
     // Hold difference in distance
-    int dyb = b2 - b1; // y distance of bottom line
-    int dyt = t2 - t1; // y distance of top    line
     int dx = x2 - x1;
+
     if (dx == 0) {
         dx = 1;
     }
-    int xs = x1; // hold initial x1 starting position
+    int xs = x1;
+    int xe = x2;
 
     // CLIP X
     if (x1 < 1) {
@@ -236,9 +263,16 @@ void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c, int s) {
     }
 
     // draw x verticle lines
-    for (x = x1; x < x2; x++) {
-        int y1 = dyb * (x - xs + 0.5) / dx + b1; // y bottom point
-        int y2 = dyt * (x - xs + 0.5) / dx + t1; // y top point
+    for (int x = x1; x < x2; x++) {
+        float tx = (float)(x-xs) / (float)(xe-xs);
+
+        float u = u0 + tx*(u1-u0);
+
+        int y1 = (b2 - b1) * (x - xs + 0.5f) / dx + b1;
+        int y2 = (t2 - t1) * (x - xs + 0.5f) / dx + t1;
+
+        int y1Original = y1;
+        int y2Original = y2;
 
         // Clip Y
         if (y1 < 1) {
@@ -254,6 +288,7 @@ void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c, int s) {
             y2 = screenHeight - 1;
         }
 
+        /*
         //surface
         if (S[s].surface == 1) { 
             S[s].surfBottom[x] = y1; //save bottom points
@@ -269,11 +304,13 @@ void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c, int s) {
             S[s].surfTop[x] = y2;
             continue;
         }
+        */
 
+        /*
         if (S[s].surface == -1) { 
             for (y = S[s].surfBottom[x]; y < y1; y++){
                 //  This function draws a pixel: x posittion, y position, width, height, color
-                DrawRectangle(x * scale, y * scale, scale, scale, S[s].c1); //bottom
+                //DrawRectangle(x * scale, y * scale, scale, scale, S[s].c1); //bottom
             }
         }
         if (S[s].surface == -2) { 
@@ -289,14 +326,32 @@ void drawWall(int x1, int x2, int b1, int b2, int t1, int t2, Color c, int s) {
                 DrawRectangle(x * scale, y * scale, scale, scale, S[s].c2); // top
             }
         }
-
+        */
+       
         for (int y = y1; y < y2; y++) {
-            DrawRectangle(x * scale, y * scale, scale, scale, c); // normal wall
+            float ty = (float)(y-y1Original) / (float)(y2Original-y1Original);
+
+            // interpolate between top and bottom of the column
+            float v = ty * Textures[W[wallIdx].wt].h;
+
+            int texU = (int)(u * Textures[W[wallIdx].wt].w);
+            int texV = (int)v;
+
+            if (texU < 0) {
+                texU += Textures[W[wallIdx].wt].w;
+            }
+            if (texV < 0) {
+                texV += Textures[W[wallIdx].wt].h;
+            }
+
+            Color texColor = GetTexturePixel(W[wallIdx].wt, texU, texV);
+
+            DrawRectangle(x * scale, y * scale, scale, scale, texColor);
         }
     }
 }
 
-int dist(int x1,int y1, int x2,int y2) {
+int dist(int x1, int y1, int x2, int y2) {
     int distance = sqrt( (x2-x1)*(x2-x1) + (y2-y1)*(y2-y1) );
     return distance;
 }
@@ -304,13 +359,17 @@ int dist(int x1,int y1, int x2,int y2) {
 void draw3D() {
     int s, w;
     int wx[4], wy[4], wz[4];
+    int sx[4], sy[4]; // screen coords
+
     float CS = M.cos[P.a], SN = M.sin[P.a];
 
     //order sectors by distance
     for(s=0; s < numSect-1; s++) {    
         for(w = 0; w < numSect-s-1; w++) {
-            if(S[w].d<S[w+1].d) { 
-                sectors st=S[w]; S[w]=S[w+1]; S[w+1]=st; 
+            if(S[w].d < S[w+1].d) { 
+                sectors st = S[w]; 
+                S[w] = S[w+1]; 
+                S[w+1] = st; 
             }
         }
     }
@@ -326,20 +385,44 @@ void draw3D() {
 
             //  cycle trough walls
             for(w = S[s].ws; w < S[s].we; w++) {
-                if (W[w].c.a < 255) {
-                    sectorTransparent = true;
-                }
+                /*
+                    if (W[w].c.a < 255) {
+                        sectorTransparent = true;
+                    }
+                */
 
                 //offset bottom 2 points by player
-                int x1 = W[w].x1 - P.x, y1=W[w].y1 - P.y;
-                int x2 = W[w].x2 - P.x, y2=W[w].y2 - P.y;
+                int x1 = W[w].x1 - P.x;
+                int y1 = W[w].y1 - P.y;
+                int x2 = W[w].x2 - P.x;
+                int y2 = W[w].y2 - P.y;
+
+                // associating texture coordinates (u,v) to the four vertices of the wall
+                float tu[4], tv[4];
+
+                tu[0] = 0; 
+                tu[1] = W[w].u; // 0–1
+                tu[2] = tu[0];
+                tu[3] = tu[1];
+
+                tv[0] = 0;
+                tv[1] = 0;
+                tv[2] = W[w].v; 
+                tv[3] = W[w].v;
+
+                /*
+                W[w].tu1 = tu[0];
+                W[w].tv1 = tv[0];
+                W[w].tu2 = tu[1];
+                W[w].tv2 = tv[2];
+                */
 
                 //  swap for surface (first draw flipped faces)
                 if(loop == 0) { 
                     int swp = x1; 
                     x1 = x2; 
                     x2 = swp; 
-                    swp  =y1; 
+                    swp = y1; 
                     y1 = y2; 
                     y2 = swp;
                 }
@@ -376,31 +459,36 @@ void draw3D() {
                 //  Still, PART of the wall could be behind the player:
                 // point 1 behind player, clip
                 if (wy[0] < 1) {
-                    clipBehindPlayer(&wx[0], &wy[0], &wz[0], wx[1], wy[1], wz[1]); // bottom line
-                    clipBehindPlayer(&wx[2], &wy[2], &wz[2], wx[3], wy[3], wz[3]); // top line
+                    clipBehindPlayer(&wx[0], &wy[0], &wz[0], &tu[0], &tv[0], wx[1], wy[1], wz[1], tu[1], tv[1]); // bottom line
+                    clipBehindPlayer(&wx[2], &wy[2], &wz[2], &tu[2], &tv[2], wx[3], wy[3], wz[3], tu[3], tv[3]); // top line
                 }
                 // point 2 behind player, clip
                 if (wy[1] < 1) {
-                    clipBehindPlayer(&wx[1], &wy[1], &wz[1], wx[0], wy[0], wz[0]); // bottom line
-                    clipBehindPlayer(&wx[3], &wy[3], &wz[3], wx[2], wy[2], wz[2]); // top line
+                    clipBehindPlayer(&wx[1], &wy[1], &wz[1], &tu[1], &tv[1], wx[0], wy[0], wz[0], tu[0], tv[0]); // bottom line
+                    clipBehindPlayer(&wx[3], &wy[3], &wz[3], &tu[3], &tv[3], wx[2], wy[2], wz[2], tu[2], tv[2]); // top line
                 }
 
                 //  Screen x and y position
-                wx[0] = wx[0] * 200 / wy[0] + screenWidth / 2;
-                wy[0] = wz[0] * 200 / wy[0] + screenHeight / 2;
+                sx[0] = wx[0] * 200 / wy[0] + screenWidth / 2;
+                sy[0] = wz[0] * 200 / wy[0] + screenHeight / 2;
 
-                wx[1] = wx[1] * 200 / wy[1] + screenWidth / 2;
-                wy[1] = wz[1] * 200 / wy[1] + screenHeight / 2;
+                sx[1] = wx[1] * 200 / wy[1] + screenWidth / 2;
+                sy[1] = wz[1] * 200 / wy[1] + screenHeight / 2;
 
-                wx[2] = wx[2] * 200 / wy[2] + screenWidth / 2;
-                wy[2] = wz[2] * 200 / wy[2] + screenHeight / 2;
-                wx[3] = wx[3] * 200 / wy[3] + screenWidth / 2;
-                wy[3] = wz[3] * 200 / wy[3] + screenHeight / 2;
+                sx[2] = wx[2] * 200 / wy[2] + screenWidth / 2;
+                sy[2] = wz[2] * 200 / wy[2] + screenHeight / 2;
+                sx[3] = wx[3] * 200 / wy[3] + screenWidth / 2;
+                sy[3] = wz[3] * 200 / wy[3] + screenHeight / 2;
 
-                drawWall(wx[0], wx[1], wy[0], wy[1], wy[2], wy[3], W[w].c, s);
+                drawWall(sx[0], sx[1], 
+                        sy[0], sy[1],   // Y position of the bottom of the wall in x1 and x2
+                        sy[2], sy[3],   // Y position of the top of the wall in x1 and x2
+
+                        tu[0], tu[1],   // bottom left
+                        w);
             }
             S[s].d /= (S[s].we - S[s].ws); //find average sector distance
-            //S[s].surface *= -1; //flip to negative to draw surface (first time the loop that draws x verstical lines runs, it saves the top and bottom values, the next time it uses them)
+            S[s].surface *= -1; //flip to negative to draw surface (first time the loop that draws x verstical lines runs, it saves the top and bottom values, the next time it uses them)
         }
 
         if (sectorTransparent) {
@@ -418,11 +506,11 @@ void draw3D() {
     }
 }
 
-bool editorMode = true;
+bool editorMode = false;
 
 int main() {
     //SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(screenWidth * scale, screenHeight * scale, "Myslivcovi-Vzpominky");
+    InitWindow(screenWidth * scale, screenHeight * scale, "Utulno");
 
     SetTargetFPS(24);
 
@@ -435,12 +523,19 @@ int main() {
             if (editorMode) {
                 draw2D();   // editor
                 if (IsKeyPressed(KEY_F5)) {
-                    save(); // salva level.h
+                    save();
+                }
+                if (IsKeyPressed(KEY_TAB)) {
+                    editorMode = false;
                 }
             }
             else {
                 movePlayer();
                 draw3D();
+
+                if (IsKeyPressed(KEY_TAB)) {
+                    editorMode = true;
+                }
             }
 
             DrawText(TextFormat("Player Position: %i, %i, %i", P.x, P.y, P.z), 10, 10, 20, GREEN);

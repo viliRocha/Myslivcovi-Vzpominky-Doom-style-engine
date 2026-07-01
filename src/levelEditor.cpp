@@ -58,28 +58,36 @@ void initGlobals() {
 
 
 void draw2D() {
-    // fundo: em vez de iterar pixel a pixel, desenhe direto a textura
-    DrawTextureEx(texturesRaylib[G.st], Vector2{0,0}, 0.0f, scale, WHITE);
+    // Background: draw the texture filling all the window
+    // DrawTextureEx(texturesRaylib[G.st], Vector2{0,0}, 0.0f, scale, WHITE);
+    DrawTexturePro(
+        texturesRaylib[1],
+        Rectangle{0, 0, (float)texturesRaylib[1].width, (float)texturesRaylib[1].height},
+        Rectangle{0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()},
+        Vector2{0, 0},
+        0.0f,
+        WHITE
+    );
 
-    // desenhar setores e paredes
+    // draw sectors and walls
     for(int s=0; s<numSect; s++) {
         for(int w=S[s].ws; w<S[s].we; w++) {
             DrawLine(W[w].x1/scale, W[w].y1/scale, W[w].x2/scale, W[w].y2/scale, GRAY);
         }
     }
 
-    // desenhar player
+    // draw player
     int dx = M.sin[P.a]*12; 
     int dy = M.cos[P.a]*12; 
     DrawRectangle(P.x/scale, P.y/scale, scale, scale, GREEN); 
     DrawRectangle((P.x+dx)/scale, (P.y+dy)/scale, scale, scale, DARKGREEN);
 
-    // preview da textura da parede
+    // preview of the wall texture
     Rectangle src = {0, 0, 15, 15};
     Vector2 pos = {145, 105};
     DrawTextureRec(texturesRaylib[G.wt], src, pos, WHITE);
 
-    // preview da textura da superfície
+    // preview of surface texture
     Rectangle src2 = {0, 0, 15, 15};
     Vector2 pos2 = {145, 80};
     DrawTextureRec(texturesRaylib[G.st], src2, pos2, WHITE);

@@ -24,8 +24,9 @@ extern player P;
 typedef struct {
     int x1,y1; //bottom line point 1
     int x2,y2; //bottom line point 2
-    Color c;   //wall color
     int wt,u,v; //wall texture and u/v tile
+    float tu1,tv1; // exture coordinates at vertex 1
+    float tu2,tv2; // texture coordinates at vertex 2
     int shade; //shade of the wall
 }walls; 
 extern walls W[256];
